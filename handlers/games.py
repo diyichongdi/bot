@@ -305,7 +305,8 @@ async def handle_bet(message: Message) -> None:
     net_win = win_amount - pool_fee
     
     if win:
-        db.update_coins(user_id, net_win)
+        total_return = bet.amount + net_win
+        db.update_coins(user_id, total_return)
         db.add_win(user_id, net_win)
         
         result_text = format_result(result)
