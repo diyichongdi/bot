@@ -211,23 +211,8 @@ async def handle_recharge_address(message: Message, state: FSMContext) -> None:
 
 
 @router.message(Command("recharge"))
-async def cmd_recharge_admin(message: Message) -> None:
-    args = message.text.split()
-    if len(args) < 2:
-        await message.answer("发送 /充值 按钮进行充值，或使用 /recharge <数量> 直接充值美元")
-        return
-    
-    try:
-        amount = int(args[1])
-        if amount <= 0:
-            await message.answer("充值金额必须大于0")
-            return
-    except ValueError:
-        await message.answer("请输入有效的数字")
-        return
-    
-    db.recharge(message.from_user.id, amount)
-    await message.answer(f"✅ 充值成功！当前余额: {db.get_balance(message.from_user.id)}")
+async def cmd_recharge_start(message: Message, state: FSMContext) -> None:
+    await handle_recharge_button(message, state)
 
 
 @router.message(Command("give"))
