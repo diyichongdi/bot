@@ -8,7 +8,7 @@ from aiogram.types import Message, CallbackQuery
 from config import POOL_FEE_PERCENT, CASHBACK_PERCENT, ADMIN_IDS, RECHARGE_ADDRESS, LEOPARD_KILL
 from database import db
 from games import calculate_win, format_result, DiceResult, Bet
-from keyboards import build_main_keyboard, build_number_keyboard
+from keyboards import build_main_keyboard, build_number_keyboard, build_withdraw_confirm_keyboard, build_back_keyboard
 
 router = Router()
 
@@ -16,6 +16,12 @@ router = Router()
 class RechargeState(StatesGroup):
     entering_amount = State()
     entering_address = State()
+
+
+class WithdrawState(StatesGroup):
+    entering_address = State()
+    entering_amount = State()
+    confirming = State()
 
 
 PENDING_BETS: dict[int, Bet] = {}
@@ -128,6 +134,27 @@ async def handle_buttons(message: Message) -> None:
         await cmd_help(message)
 
 
+@router.message(F.text == "💸 提现")
+async def handle_withdraw_button(message: Message, state: FSMContext) -> None:
+    user = db.get_user(message.from_user.id)
+    if user["coins"] < 100:
+        await message.answer(f"❌ 余额不足，最小提现金额为100，当前余额: {user['coins']}")
+        return
+    
+    await state.set_state(WithdrawState.entering_address)
+    await message.answer(
+        f"💸   提现  \n\n"
+        f"当前余额: {user['coins']}\n\n"
+        f"请输入您的提现地址 (USDT TRC20)：",
+        reply_markup=build_back_keyboard()
+    )
+
+
+@router.message(Command("提现"))
+async def cmd_withdraw_start(message: Message, state: FSMContext) -> None:
+    await handle_withdraw_button(message, state)
+
+
 @router.message(F.text == "💳 充值")
 async def handle_recharge_button(message: Message, state: FSMContext) -> None:
     await state.set_state(RechargeState.entering_amount)
@@ -208,6 +235,88 @@ async def handle_recharge_address(message: Message, state: FSMContext) -> None:
         f"{RECHARGE_ADDRESS}\n\n"
         f"⚠️ 转账完成后，等待0~15分钟到账！"
     )
+
+
+@router.message(WithdrawState.entering_address)
+async def handle_withdraw_address(message: Message, state: FSMContext) -> None:
+    if message.text == "🔙 返回":
+        await state.clear()
+        await cmd_start(message)
+        return
+    
+    if not message.text or len(message.text) < 10:
+        await message.answer("请输入有效的地址：")
+        return
+    
+    address = message.text.strip()
+    await state.update_data(address=address)
+    await state.set_state(WithdrawState.entering_amount)
+    await message.answer(
+        f"💸   提现  \n\n"
+        f"地址: {address}\n\n"
+        f"请输入提现金额：",
+        reply_markup=build_number_keyboard()
+    )
+
+
+@router.message(WithdrawState.entering_amount)
+async def handle_withdraw_amount(message: Message, state: FSMContext) -> None:
+    if message.text == "🔙 返回":
+        await state.clear()
+        await cmd_start(message)
+        return
+    
+    try:
+        amount = int(message.text.strip())
+    except ValueError:
+        await message.answer("请输入有效的数字：")
+        return
+    
+    user = db.get_user(message.from_user.id)
+    if amount < 100:
+        await message.answer(f"❌ 最小提现金额为100，当前余额: {user['coins']}")
+        return
+    
+    if amount > user["coins"]:
+        await message.answer(f"❌ 余额不足！当前余额: {user['coins']}")
+        return
+    
+    data = await state.get_data()
+    address = data.get("address", "")
+    
+    await state.update_data(amount=amount)
+    await state.set_state(WithdrawState.confirming)
+    
+    await message.answer(
+        f"📋   提现确认  \n\n"
+        f"💳 提现地址: {address}\n"
+        f"💰 提现金额: {amount}\n\n"
+        f"⚠️ 请勿提至交易所，请使用冷钱包",
+        reply_markup=build_withdraw_confirm_keyboard()
+    )
+
+
+@router.callback_query(WithdrawState.confirming)
+async def handle_withdraw_confirm(callback: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    address = data.get("address", "")
+    amount = data.get("amount", 0)
+    user_id = callback.from_user.id
+    
+    if callback.data == "withdraw_confirm":
+        db.update_coins(user_id, -amount)
+        
+        await callback.message.edit_text(
+            f"✅ 提现申请已提交\n\n"
+            f"💳 地址: {address}\n"
+            f"💰 金额: {amount}\n\n"
+            f"⏰ 人工确认中，3个标准小时内到账"
+        )
+    else:
+        await callback.message.edit_text("❌ 提现已取消")
+    
+    await state.clear()
+    await callback.answer()
 
 
 @router.message(Command("recharge"))

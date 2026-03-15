@@ -11,6 +11,9 @@ def build_main_keyboard() -> ReplyKeyboardMarkup:
             ],
             [
                 KeyboardButton(text="💳 充值"),
+                KeyboardButton(text="💸 提现"),
+            ],
+            [
                 KeyboardButton(text="🎰 帮助"),
             ],
         ],
@@ -47,3 +50,10 @@ def build_back_keyboard() -> ReplyKeyboardMarkup:
         resize_keyboard=True,
     )
     return keyboard
+
+
+def build_withdraw_confirm_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ 确认", callback_data="withdraw_confirm")
+    builder.button(text="❌ 取消", callback_data="withdraw_cancel")
+    return builder.as_markup()
