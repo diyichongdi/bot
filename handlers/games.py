@@ -1,11 +1,13 @@
 import re
+import time
+from datetime import datetime, timedelta
 from aiogram import Dispatcher, Router, F, Bot
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message, CallbackQuery
 
-from config import POOL_FEE_PERCENT, CASHBACK_PERCENT, ADMIN_IDS, RECHARGE_ADDRESS, LEOPARD_KILL
+from config import POOL_FEE_PERCENT, CASHBACK_PERCENT, ADMIN_IDS, RECHARGE_ADDRESS, LEOPARD_KILL, EXCHANGE_RATE, INITIAL_COINS
 from database import db
 from games import calculate_win, format_result, DiceResult, Bet
 from keyboards import build_main_keyboard, build_number_keyboard, build_withdraw_confirm_keyboard, build_back_keyboard
@@ -28,8 +30,10 @@ PENDING_BETS: dict[int, Bet] = {}
 
 
 @router.message(Command("start"))
-async def cmd_start(message: Message) -> None:
+async def cmd_start(message: Message, bot: Bot) -> None:
     user = db.get_user(message.from_user.id)
+    is_new = user["total_bet"] == 0 and user["coins"] == INITIAL_COINS
+    
     if message.from_user.username:
         db.update_username(message.from_user.id, message.from_user.username)
     
@@ -46,6 +50,19 @@ async def cmd_start(message: Message) -> None:
         f"💡 发送 /help 查看完整规则",
         reply_markup=build_main_keyboard(),
     )
+    
+    if is_new and ADMIN_IDS:
+        for admin_id in ADMIN_IDS:
+            try:
+                await bot.send_message(
+                    admin_id,
+                    f"🆕 新用户注册\n\n"
+                    f"👤 用户: {username}\n"
+                    f"🆔 ID: {user['uid']}\n"
+                    f"💰 余额: {user['coins']}"
+                )
+            except Exception:
+                pass
 
 
 @router.message(Command("help"))
@@ -214,6 +231,10 @@ async def handle_number_callback(callback: CallbackQuery, state: FSMContext, bot
     await callback.answer()
 
 
+def generate_order_id() -> str:
+    return f"VP{int(time.time() * 1000)}"
+
+
 @router.message(RechargeState.entering_address)
 async def handle_recharge_address(message: Message, state: FSMContext) -> None:
     if not message.text:
@@ -225,15 +246,27 @@ async def handle_recharge_address(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     amount = data.get("amount", 0)
     
+    order_id = generate_order_id()
+    usdt_amount = round(amount / EXCHANGE_RATE, 2)
+    expire_time = (datetime.now() + timedelta(minutes=30)).strftime("%Y-%m-%d %H:%M:%S")
+    
     await state.clear()
+    await state.update_data(order_id=order_id, amount=amount, address=address)
     
     await message.answer(
-        f"📋   充值信息确认  \n\n"
-        f"💳 汇出地址: {address}\n"
-        f"💰 充值金额: {amount} 美元\n\n"
-        f"  请向以下地址转账USDT：  \n"
-        f"{RECHARGE_ADDRESS}\n\n"
-        f"⚠️ 转账完成后，等待0~15分钟到账！"
+        f"订单号：{order_id}\n"
+        f"汇率：{EXCHANGE_RATE}\n"
+        f"支付金额：{usdt_amount} USDT\n"
+        f"收款地址 (TRC20)：\n"
+        f"```{RECHARGE_ADDRESS}```\n\n"
+        f"请在 30 分钟内完成TRC20-USDT转账，转账后点击【我已支付】按钮。\n\n"
+        f"订单到期时间：{expire_time}\n\n"
+        f"❗️ 请务必使用 TRC20 网络转账，转错网络无法找回。\n"
+        f"❗️ 请确保到账【{usdt_amount} USDT】，少转不到账，多转不退。\n"
+        f"⚠️ 是到账金额，不是打款金额，交易所打款普遍扣 1U 手续费。\n"
+        f"❗️ 请务必在 30 分钟内完成转账，否则订单将失效。\n"
+        f"❗️ 转账时请预留足够的 TRX 作为矿工费。\n\n"
+        f"❗️ 转账需要链上确认，一般一分钟内到账。"
     )
 
 
@@ -287,10 +320,14 @@ async def handle_withdraw_amount(message: Message, state: FSMContext) -> None:
     await state.update_data(amount=amount)
     await state.set_state(WithdrawState.confirming)
     
+    usdt_amount = round(amount / EXCHANGE_RATE, 2)
+    
     await message.answer(
         f"📋   提现确认  \n\n"
-        f"💳 提现地址: {address}\n"
-        f"💰 提现金额: {amount}\n\n"
+        f"订单号：{generate_order_id()}\n"
+        f"汇率：{EXCHANGE_RATE}\n"
+        f"支付金额：{usdt_amount} USDT\n"
+        f"收款地址 (TRC20)：\n```{address}```\n\n"
         f"⚠️ 请勿提至交易所，请使用冷钱包",
         reply_markup=build_withdraw_confirm_keyboard()
     )
@@ -317,11 +354,6 @@ async def handle_withdraw_confirm(callback: CallbackQuery, state: FSMContext) ->
     
     await state.clear()
     await callback.answer()
-
-
-@router.message(Command("recharge"))
-async def cmd_recharge_start(message: Message, state: FSMContext) -> None:
-    await handle_recharge_button(message, state)
 
 
 @router.message(Command("give"))
