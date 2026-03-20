@@ -514,13 +514,16 @@ def main() -> None:
     
     application = Application.builder().token(token).build()
     
+    def is_command(text: str) -> bool:
+        return text and text.startswith("/")
+    
     application.add_handler(CommandHandler("start", cmd_start))
     application.add_handler(CommandHandler("help", cmd_help))
     application.add_handler(CommandHandler("balance", cmd_balance))
-    application.add_handler(MessageHandler(filters.Regex(r"^/记录$"), cmd_record))
-    application.add_handler(MessageHandler(filters.Regex(r"^/充值$"), cmd_recharge_start))
-    application.add_handler(MessageHandler(filters.Regex(r"^/提现$"), cmd_withdraw_start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_button))
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"^/记录$"), cmd_record))
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"^/充值"), cmd_recharge_start))
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"^/提现"), cmd_withdraw_start))
     application.add_handler(CallbackQueryHandler(handle_callback))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_bet))
     
