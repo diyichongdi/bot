@@ -2,7 +2,7 @@ import os
 import logging
 
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler, CallbackQueryHandler
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
 from config import BOT_TOKEN, EXCHANGE_RATE, RECHARGE_ADDRESS, ADMIN_IDS, INITIAL_COINS, POOL_FEE_PERCENT, CASHBACK_PERCENT, LEOPARD_KILL
 from database import db
@@ -11,8 +11,6 @@ from keyboards import build_main_keyboard, build_number_keyboard, build_withdraw
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-ENTERING_AMOUNT, ENTERING_ADDRESS, WITHDRAW_ADDRESS, WITHDRAW_AMOUNT, WITHDRAW_CONFIRM = range(5)
 
 
 def generate_order_id() -> str:
@@ -134,7 +132,8 @@ async def cmd_record(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     await update.message.reply_text(msg)
 
 
-async def cmd_recharge_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def cmd_recharge_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    context.user_data['state'] = 'recharge_amount'
     context.user_data['recharge_amount'] = ""
     
     msg = await update.message.reply_text(
@@ -143,11 +142,9 @@ async def cmd_recharge_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
     )
     context.user_data['recharge_msg_id'] = msg.message_id
     context.user_data['recharge_chat_id'] = msg.chat_id
-    
-    return ENTERING_AMOUNT
 
 
-async def handle_recharge_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def handle_recharge_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
     
@@ -160,8 +157,13 @@ async def handle_recharge_callback(update: Update, context: ContextTypes.DEFAULT
     elif data == "num:confirm":
         if current and current.lstrip("0"):
             context.user_data['recharge_amount'] = int(current)
-            return ENTERING_ADDRESS
-        return ENTERING_AMOUNT
+            context.user_data['state'] = 'recharge_address'
+            msg = await query.message.reply_text(
+                f"💳 充值金额: {int(current)}\n\n"
+                f"请输入您的充值汇出地址 (USDT TRC20)："
+            )
+            context.user_data['recharge_msg_id'] = msg.message_id
+            return
     elif data.startswith("num:"):
         num = data.split(":")[1]
         if num.isdigit():
@@ -178,14 +180,12 @@ async def handle_recharge_callback(update: Update, context: ContextTypes.DEFAULT
         )
     except Exception:
         pass
-    
-    return ENTERING_AMOUNT
 
 
-async def handle_recharge_address(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def handle_recharge_address(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message.text or len(update.message.text) < 10:
         await update.message.reply_text("请输入有效的地址：")
-        return ENTERING_ADDRESS
+        return
     
     address = update.message.text.strip()
     context.user_data['recharge_address'] = address
@@ -194,16 +194,14 @@ async def handle_recharge_address(update: Update, context: ContextTypes.DEFAULT_
         f"💳 汇出地址: {address}\n\n"
         f"请选择充值金额按钮继续，或回复任意内容继续"
     )
-    
-    return ENTERING_AMOUNT
 
 
-async def handle_recharge_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def handle_recharge_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     amount = context.user_data.get('recharge_amount', 0)
     
     if not amount:
         await update.message.reply_text("请先输入充值金额")
-        return ENTERING_AMOUNT
+        return
     
     order_id = generate_order_id()
     usdt_amount = round(amount / EXCHANGE_RATE, 2)
@@ -231,13 +229,15 @@ async def handle_recharge_confirm(update: Update, context: ContextTypes.DEFAULT_
     return ConversationHandler.END
 
 
-async def cmd_withdraw_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def cmd_withdraw_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     user = db.get_user(user_id)
     
     if user["coins"] < 100:
         await update.message.reply_text(f"❌ 余额不足，最小提现金额为100，当前余额: {user['coins']}")
-        return ConversationHandler.END
+        return
+    
+    context.user_data['state'] = 'withdraw_address'
     
     await update.message.reply_text(
         f"💸   提现  \n\n"
@@ -245,21 +245,20 @@ async def cmd_withdraw_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
         f"请输入您的提现地址 (USDT TRC20)：",
         reply_markup=build_back_keyboard()
     )
-    
-    return WITHDRAW_ADDRESS
 
 
-async def handle_withdraw_address(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def handle_withdraw_address(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.message.text == "🔙 返回":
         context.user_data.clear()
         await cmd_start(update, context)
-        return ConversationHandler.END
+        return
     
     if not update.message.text or len(update.message.text) < 10:
         await update.message.reply_text("请输入有效的地址：")
-        return WITHDRAW_ADDRESS
+        return
     
     context.user_data['withdraw_address'] = update.message.text.strip()
+    context.user_data['state'] = 'withdraw_amount'
     
     msg = await update.message.reply_text(
         f"💸   提现  \n\n"
@@ -268,11 +267,9 @@ async def handle_withdraw_address(update: Update, context: ContextTypes.DEFAULT_
         reply_markup=build_number_keyboard()
     )
     context.user_data['withdraw_msg_id'] = msg.message_id
-    
-    return WITHDRAW_AMOUNT
 
 
-async def handle_withdraw_amount_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def handle_withdraw_amount_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
     
@@ -298,7 +295,7 @@ async def handle_withdraw_amount_callback(update: Update, context: ContextTypes.
                     text=f"❌ 最小提现金额为100，当前余额: {user['coins']}",
                     reply_markup=build_number_keyboard()
                 )
-                return WITHDRAW_AMOUNT
+                return
             
             if amount > user["coins"]:
                 await context.bot.edit_message_text(
@@ -307,9 +304,11 @@ async def handle_withdraw_amount_callback(update: Update, context: ContextTypes.
                     text=f"❌ 余额不足！当前余额: {user['coins']}",
                     reply_markup=build_number_keyboard()
                 )
-                return WITHDRAW_AMOUNT
+                return
             
             usdt_amount = round(amount / EXCHANGE_RATE, 2)
+            
+            context.user_data['state'] = 'withdraw_confirm'
             
             await context.bot.edit_message_text(
                 chat_id=query.message.chat.id,
@@ -322,8 +321,8 @@ async def handle_withdraw_amount_callback(update: Update, context: ContextTypes.
                 f"⚠️ 请勿提至交易所，请使用冷钱包",
                 reply_markup=build_withdraw_confirm_keyboard()
             )
-            return WITHDRAW_CONFIRM
-        return WITHDRAW_AMOUNT
+            return
+        return
     elif data.startswith("num:"):
         num = data.split(":")[1]
         if num.isdigit():
@@ -342,11 +341,9 @@ async def handle_withdraw_amount_callback(update: Update, context: ContextTypes.
         )
     except Exception:
         pass
-    
-    return WITHDRAW_AMOUNT
 
 
-async def handle_withdraw_confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def handle_withdraw_confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
     
@@ -367,7 +364,6 @@ async def handle_withdraw_confirm_callback(update: Update, context: ContextTypes
         await query.message.edit_text("❌ 提现已取消")
     
     context.user_data.clear()
-    return ConversationHandler.END
 
 
 async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -383,6 +379,28 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await cmd_recharge_start(update, context)
     elif "💸" in text or "提现" in text:
         await cmd_withdraw_start(update, context)
+
+
+async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    
+    data = query.data
+    user_state = context.user_data.get('state', '')
+    
+    if user_state == 'recharge_amount':
+        await handle_recharge_callback(update, context)
+    elif user_state == 'withdraw_amount':
+        await handle_withdraw_amount_callback(update, context)
+    elif user_state == 'withdraw_confirm':
+        await handle_withdraw_confirm_callback(update, context)
+    elif data and data.startswith("num:"):
+        if 'recharge_amount' in str(context.user_data.get('state', '')):
+            await handle_recharge_callback(update, context)
+        else:
+            await handle_withdraw_amount_callback(update, context)
+    elif data and data.startswith("withdraw_"):
+        await handle_withdraw_confirm_callback(update, context)
 
 
 def parse_bet(text: str) -> Bet | None:
@@ -502,39 +520,8 @@ def main() -> None:
     application.add_handler(MessageHandler(filters.Regex(r"^/记录$"), cmd_record))
     application.add_handler(MessageHandler(filters.Regex(r"^/充值$"), cmd_recharge_start))
     application.add_handler(MessageHandler(filters.Regex(r"^/提现$"), cmd_withdraw_start))
-    
-    recharge_conv = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex(r"^/充值$"), cmd_recharge_start)],
-        states={
-            ENTERING_AMOUNT: [
-                CallbackQueryHandler(handle_recharge_callback, pattern=r"^num:"),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_recharge_confirm),
-            ],
-            ENTERING_ADDRESS: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_recharge_address),
-            ],
-        },
-        fallbacks=[],
-    )
-    application.add_handler(recharge_conv)
-    
-    withdraw_conv = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex(r"^/提现$"), cmd_withdraw_start)],
-        states={
-            WITHDRAW_ADDRESS: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_withdraw_address),
-            ],
-            WITHDRAW_AMOUNT: [
-                CallbackQueryHandler(handle_withdraw_amount_callback, pattern=r"^num:"),
-            ],
-            WITHDRAW_CONFIRM: [
-                CallbackQueryHandler(handle_withdraw_confirm_callback, pattern=r"^withdraw_"),
-            ],
-        },
-        fallbacks=[],
-    )
-    application.add_handler(withdraw_conv)
-    
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_button))
+    application.add_handler(CallbackQueryHandler(handle_callback))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_bet))
     
     application.run_webhook(
