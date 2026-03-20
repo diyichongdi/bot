@@ -1,5 +1,4 @@
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from telegram import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
 
 def build_main_keyboard() -> ReplyKeyboardMarkup:
@@ -23,21 +22,25 @@ def build_main_keyboard() -> ReplyKeyboardMarkup:
 
 
 def build_number_keyboard() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    for i in [1, 2, 3, 4, 5, 6, 7, 8, 9]:
-        builder.button(text=f"「{i}」", callback_data=f"num:{i}")
-    builder.button(text="✅ 确认", callback_data="num:confirm")
-    builder.button(text="0", callback_data="num:0")
-    builder.button(text="🔙", callback_data="num:back")
-    builder.adjust(3, 3, 3, 1, 1, 1)
-    return builder.as_markup()
+    keyboard = []
+    row = []
+    for i in range(1, 10):
+        row.append(InlineKeyboardButton(text=f"「{i}」", callback_data=f"num:{i}"))
+        if len(row) == 3:
+            keyboard.append(row)
+            row = []
+    keyboard.append(row)
+    keyboard.append([InlineKeyboardButton(text="✅ 确认", callback_data="num:confirm")])
+    keyboard.append([InlineKeyboardButton(text="0", callback_data="num:0"), InlineKeyboardButton(text="🔙", callback_data="num:back")])
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
 def build_recharge_confirm_keyboard(amount: int) -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.button(text="✅ 确认充值", callback_data=f"recharge_confirm:{amount}")
-    builder.button(text="❌ 取消", callback_data="recharge_cancel")
-    return builder.as_markup()
+    keyboard = [
+        [InlineKeyboardButton(text="✅ 确认充值", callback_data=f"recharge_confirm:{amount}")],
+        [InlineKeyboardButton(text="❌ 取消", callback_data="recharge_cancel")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
 def build_back_keyboard() -> ReplyKeyboardMarkup:
@@ -53,7 +56,8 @@ def build_back_keyboard() -> ReplyKeyboardMarkup:
 
 
 def build_withdraw_confirm_keyboard() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.button(text="✅ 确认", callback_data="withdraw_confirm")
-    builder.button(text="❌ 取消", callback_data="withdraw_cancel")
-    return builder.as_markup()
+    keyboard = [
+        [InlineKeyboardButton(text="✅ 确认", callback_data="withdraw_confirm")],
+        [InlineKeyboardButton(text="❌ 取消", callback_data="withdraw_cancel")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
