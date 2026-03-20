@@ -226,8 +226,6 @@ async def handle_recharge_confirm(update: Update, context: ContextTypes.DEFAULT_
         f"❗️ 转账时请预留足够的 TRX 作为矿工费。\n\n"
         f"❗️ 转账需要链上确认，一般一分钟内到账。"
     )
-    
-    return ConversationHandler.END
 
 
 async def cmd_withdraw_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -527,8 +525,13 @@ def main() -> None:
             await handle_recharge_confirm(update, context)
         elif state == 'withdraw_address':
             await handle_withdraw_address(update, context)
+        elif state == 'withdraw_amount':
+            await handle_withdraw_address(update, context)
+        elif state == 'withdraw_confirm':
+            pass
         else:
             await handle_button(update, context)
+            await handle_bet(update, context)
     
     application.add_handler(CommandHandler("start", cmd_start))
     application.add_handler(CommandHandler("help", cmd_help))
@@ -538,7 +541,6 @@ def main() -> None:
     application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"^/提现"), cmd_withdraw_start))
     application.add_handler(CallbackQueryHandler(handle_callback))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_all_text))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_bet))
     
     application.run_webhook(
         listen="0.0.0.0",
