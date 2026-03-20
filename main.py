@@ -492,6 +492,7 @@ async def handle_bet(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 def main() -> None:
     token = os.environ.get("BOT_TOKEN", BOT_TOKEN)
     port = int(os.environ.get("PORT", "8000"))
+    webhook_url = os.environ.get("WEBHOOK_URL", "")
     
     application = Application.builder().token(token).build()
     
@@ -540,6 +541,7 @@ def main() -> None:
         listen="0.0.0.0",
         port=port,
         url_path="webhook",
+        webhook_url=webhook_url or None,
     )
 
 
