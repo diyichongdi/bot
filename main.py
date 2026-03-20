@@ -189,6 +189,7 @@ async def handle_recharge_address(update: Update, context: ContextTypes.DEFAULT_
     
     address = update.message.text.strip()
     context.user_data['recharge_address'] = address
+    context.user_data['state'] = 'recharge_confirm'
     
     await update.message.reply_text(
         f"💳 汇出地址: {address}\n\n"
@@ -517,14 +518,26 @@ def main() -> None:
     def is_command(text: str) -> bool:
         return text and text.startswith("/")
     
+    async def handle_all_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        state = context.user_data.get('state', '')
+        
+        if state == 'recharge_address':
+            await handle_recharge_address(update, context)
+        elif state == 'recharge_confirm':
+            await handle_recharge_confirm(update, context)
+        elif state == 'withdraw_address':
+            await handle_withdraw_address(update, context)
+        else:
+            await handle_button(update, context)
+    
     application.add_handler(CommandHandler("start", cmd_start))
     application.add_handler(CommandHandler("help", cmd_help))
     application.add_handler(CommandHandler("balance", cmd_balance))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_button))
     application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"^/记录$"), cmd_record))
     application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"^/充值"), cmd_recharge_start))
     application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"^/提现"), cmd_withdraw_start))
     application.add_handler(CallbackQueryHandler(handle_callback))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_all_text))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_bet))
     
     application.run_webhook(
