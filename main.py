@@ -498,12 +498,12 @@ def main() -> None:
     application.add_handler(CommandHandler("start", cmd_start))
     application.add_handler(CommandHandler("help", cmd_help))
     application.add_handler(CommandHandler("balance", cmd_balance))
-    application.add_handler(CommandHandler("记录", cmd_record))
-    application.add_handler(CommandHandler("充值", cmd_recharge_start))
-    application.add_handler(CommandHandler("提现", cmd_withdraw_start))
+    application.add_handler(MessageHandler(filters.Regex(r"^/记录$"), cmd_record))
+    application.add_handler(MessageHandler(filters.Regex(r"^/充值$"), cmd_recharge_start))
+    application.add_handler(MessageHandler(filters.Regex(r"^/提现$"), cmd_withdraw_start))
     
     recharge_conv = ConversationHandler(
-        entry_points=[CommandHandler("充值", cmd_recharge_start)],
+        entry_points=[MessageHandler(filters.Regex(r"^/充值$"), cmd_recharge_start)],
         states={
             ENTERING_AMOUNT: [
                 CallbackQueryHandler(handle_recharge_callback, pattern=r"^num:"),
@@ -518,7 +518,7 @@ def main() -> None:
     application.add_handler(recharge_conv)
     
     withdraw_conv = ConversationHandler(
-        entry_points=[CommandHandler("提现", cmd_withdraw_start)],
+        entry_points=[MessageHandler(filters.Regex(r"^/提现$"), cmd_withdraw_start)],
         states={
             WITHDRAW_ADDRESS: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_withdraw_address),
